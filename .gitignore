@@ -1,0 +1,17 @@
+# Pastas temporárias da Unreal
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Arquivos do Visual Studio
+.vs/
+.vscode/
+*.VC.db
+*.opendb
+*.opensdf
+*.sdf
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
