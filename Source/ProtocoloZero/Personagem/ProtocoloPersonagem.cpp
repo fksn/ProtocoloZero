@@ -8,6 +8,11 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Net/UnrealNetwork.h"
+
+// --- ADICIONE ESTA LINHA AQUI ---
+#include "Components/CapsuleComponent.h"
+// --------------------------------
+
 #include "ProtocoloZero/Weapon/Weapon.h"
 #include "ProtocoloZero/ProtocoloComponents/CombatComponent.h"
 
@@ -16,41 +21,60 @@ AProtocoloPersonagem::AProtocoloPersonagem()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
-
-	// Mudança 1: Prender na cápsula (RootComponent) no lugar do GetMesh().
-	// Isso garante que a câmera nasça no centro do personagem, e não nos pés.
-	CameraBoom->SetupAttachment(RootComponent);
-
-	CameraBoom->TargetArmLength = 600.f;
-	CameraBoom->bUsePawnControlRotation = true;
-
-	// Mudança 2: Desativar a colisão do braço da câmera com o cenário/personagem.
-	CameraBoom->bDoCollisionTest = false;
-
-	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
-	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
-	FollowCamera->bUsePawnControlRotation = false;
-
-	bUseControllerRotationYaw = false;
-	GetCharacterMovement()->bOrientRotationToMovement = true;
-
-	// ... (código anterior da FollowCamera)
-	FollowCamera->bUsePawnControlRotation = false;
-
-	// --- CONFIGURAÇÃO DA CÂMERA EM PRIMEIRA PESSOA ---
+	// --- CÂMERA EM PRIMEIRA PESSOA (FPS) ---
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-	// Prende a câmera na malha (Mesh), especificamente no osso da cabeça
-	FirstPersonCamera->SetupAttachment(GetMesh(), TEXT("head"));
-	FirstPersonCamera->bUsePawnControlRotation = true; // Permite olhar ao redor com o mouse
-	FirstPersonCamera->SetActive(false); // Começa desativada, pois o jogo inicia em 3ª pessoa
+	FirstPersonCamera->SetupAttachment(GetCapsuleComponent()); // Presa na cápsula de colisão (mira perfeita)
+	FirstPersonCamera->SetRelativeLocation(FVector(0.f, 0.f, 70.f)); // Altura dos olhos
+	FirstPersonCamera->bUsePawnControlRotation = true;
+	FirstPersonCamera->SetActive(true); // O jogo agora já nasce na visão FPS
 	// -------------------------------------------------
 
-	bUseControllerRotationYaw = false;
+	// --- ROTAÇÃO DO PERSONAGEM (Essencial para o Multiplayer) ---
+	bUseControllerRotationYaw = true; // Obriga o corpo invisível a girar com o mouse
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationRoll = false;
+	GetCharacterMovement()->bOrientRotationToMovement = false; // Desliga o modo de rotação livre do TPS
+	// ------------------------------------------------------------
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("CombatComponent"));
 	Combat->SetIsReplicated(true);
 	GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
+
+	// 1. Oculta o corpo mestre da sua própria tela
+	GetMesh()->SetOwnerNoSee(true);
+
+	// Obriga a Unreal a calcular a animação do esqueleto invisível
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	GetMesh()->bEnableUpdateRateOptimizations = false;
+
+	// --- CABEÇA ---
+	HeadMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HeadMesh"));
+	HeadMesh->SetupAttachment(GetMesh());
+	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HeadMesh->SetOwnerNoSee(true);
+
+	// --- TRONCO ---
+	TorsoMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("TorsoMesh"));
+	TorsoMesh->SetupAttachment(GetMesh());
+	TorsoMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	TorsoMesh->SetOwnerNoSee(true);
+
+	// --- BRAÇOS (Você os vê na tela) ---
+	ArmsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("ArmsMesh"));
+	ArmsMesh->SetupAttachment(GetMesh());
+	ArmsMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ArmsMesh->SetOwnerNoSee(false);
+
+	// --- PERNAS e PÉS (Você os vê ao olhar para baixo) ---
+	LegsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("LegsMesh"));
+	LegsMesh->SetupAttachment(GetMesh());
+	LegsMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	LegsMesh->SetOwnerNoSee(false);
+
+	FootsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FootsMesh"));
+	FootsMesh->SetupAttachment(GetMesh());
+	FootsMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FootsMesh->SetOwnerNoSee(false);
 }
 
 void AProtocoloPersonagem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -108,13 +132,6 @@ void AProtocoloPersonagem::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 		{
 			EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AProtocoloPersonagem::Look);
 		}
-
-		if (ToggleCameraAction)
-		{
-			// Usamos ETriggerEvent::Started para que ele troque apenas na hora que a tecla for "Pressionada"
-			EnhancedInputComponent->BindAction(ToggleCameraAction, ETriggerEvent::Started, this, &AProtocoloPersonagem::ToggleCamera);
-		}
-
 		if (EquipAction)
 		{
 			EnhancedInputComponent->BindAction(EquipAction, ETriggerEvent::Started, this, &AProtocoloPersonagem::EquipButtonPressed);
@@ -182,25 +199,6 @@ void AProtocoloPersonagem::Look(const FInputActionValue& Value)
 		// Adiciona as rotações ao controlador do personagem
 		AddControllerYawInput(LookAxisVector.X);
 		AddControllerPitchInput(LookAxisVector.Y);
-	}
-}
-
-void AProtocoloPersonagem::ToggleCamera(const FInputActionValue& Value)
-{
-	// Inverte o estado atual (Se era false, vira true. Se era true, vira false)
-	bIsFirstPerson = !bIsFirstPerson;
-
-	if (bIsFirstPerson)
-	{
-		// Desliga a Terceira Pessoa e Liga a Primeira Pessoa
-		FollowCamera->SetActive(false);
-		FirstPersonCamera->SetActive(true);
-	}
-	else
-	{
-		// Desliga a Primeira Pessoa e Liga a Terceira Pessoa
-		FirstPersonCamera->SetActive(false);
-		FollowCamera->SetActive(true);
 	}
 }
 

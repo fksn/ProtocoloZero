@@ -31,19 +31,12 @@ protected:
 	void Look(const FInputActionValue& Value);
 
 	// NOVA FUNÇÃO: Alternar a câmera
-	void ToggleCamera(const FInputActionValue& Value);
 	void EquipButtonPressed(const FInputActionValue& Value);
 	void CrouchButtonPressed(const FInputActionValue& Value);
 	void AimButtonPressed();
 	void AimButtonReleased();
 
 private:
-	UPROPERTY(VisibleAnywhere, Category = Camera)
-	class USpringArmComponent* CameraBoom;
-
-	UPROPERTY(VisibleAnywhere, Category = Camera)
-	class UCameraComponent* FollowCamera;
-
 	// NOVA CÂMERA: Primeira Pessoa
 	UPROPERTY(VisibleAnywhere, Category = Camera)
 	class UCameraComponent* FirstPersonCamera;
@@ -61,10 +54,6 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* LookAction;
 
-	// NOVA AÇÃO: Botão para trocar a câmera
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	UInputAction* ToggleCameraAction;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* EquipAction;
 
@@ -77,9 +66,6 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class UWidgetComponent* OverheadWidget;
 
-	// Variável para saber qual câmera está ativa
-	bool bIsFirstPerson = false;
-
 	UPROPERTY(ReplicatedUsing = OnRep_OverlappingWeapon)
 	class AWeapon* OverlappingWeapon;
 
@@ -91,6 +77,24 @@ private:
 
 	UFUNCTION()
 	void OnRep_OverlappingWeapon(AWeapon* LastWeapon);
+
+	// O seu corpo principal continua sendo o GetMesh() padrão da Unreal.
+	// Vamos adicionar os pedaços que vão se colar nele:
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modular Mesh", meta = (AllowPrivateAccess = "true"))
+	class USkeletalMeshComponent* HeadMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modular Mesh", meta = (AllowPrivateAccess = "true"))
+	class USkeletalMeshComponent* TorsoMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modular Mesh", meta = (AllowPrivateAccess = "true"))
+	class USkeletalMeshComponent* ArmsMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modular Mesh", meta = (AllowPrivateAccess = "true"))
+	class USkeletalMeshComponent* LegsMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modular Mesh", meta = (AllowPrivateAccess = "true"))
+	class USkeletalMeshComponent* FootsMesh;
 
 
 public:
