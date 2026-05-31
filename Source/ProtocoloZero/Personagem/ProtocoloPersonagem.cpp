@@ -9,6 +9,7 @@
 #include "Components/WidgetComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "ProtocoloZero/Weapon/Weapon.h"
+#include "ProtocoloZero/ProtocoloComponents/CombatComponent.h"
 
 // Sets default values
 AProtocoloPersonagem::AProtocoloPersonagem()
@@ -46,6 +47,10 @@ AProtocoloPersonagem::AProtocoloPersonagem()
 	// -------------------------------------------------
 
 	bUseControllerRotationYaw = false;
+
+	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("CombatComponent"));
+	Combat->SetIsReplicated(true);
+	GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
 }
 
 void AProtocoloPersonagem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -109,8 +114,40 @@ void AProtocoloPersonagem::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 			// Usamos ETriggerEvent::Started para que ele troque apenas na hora que a tecla for "Pressionada"
 			EnhancedInputComponent->BindAction(ToggleCameraAction, ETriggerEvent::Started, this, &AProtocoloPersonagem::ToggleCamera);
 		}
-	}
 
+		if (EquipAction)
+		{
+			EnhancedInputComponent->BindAction(EquipAction, ETriggerEvent::Started, this, &AProtocoloPersonagem::EquipButtonPressed);
+		}
+
+		if (CrouchAction)
+		{
+			EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &AProtocoloPersonagem::CrouchButtonPressed);
+		}
+
+		if (AimAction)
+		{
+			// IE_Pressed vira ETriggerEvent::Started
+			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &AProtocoloPersonagem::AimButtonPressed);
+
+			// IE_Released vira ETriggerEvent::Completed
+			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &AProtocoloPersonagem::AimButtonReleased);
+		}
+	}
+}
+
+void AProtocoloPersonagem::PostInitializeComponents()
+{
+		Super::PostInitializeComponents();
+		if (Combat)
+		{
+			Combat->Personagem = this;
+		}
+}
+
+bool AProtocoloPersonagem::IsWeaponEquipped()
+{
+	return (Combat && Combat->EquippedWeapon);
 }
 
 void AProtocoloPersonagem::Move(const FInputActionValue& Value)
@@ -167,6 +204,62 @@ void AProtocoloPersonagem::ToggleCamera(const FInputActionValue& Value)
 	}
 }
 
+void AProtocoloPersonagem::EquipButtonPressed(const FInputActionValue& Value)
+{
+	if (Combat)
+	{
+		if (HasAuthority())
+		{
+			Combat->EquipWeapon(OverlappingWeapon);
+		}
+		else
+		{
+			ServerEquipButtonPressed();
+		}
+	}
+}
+
+void AProtocoloPersonagem::CrouchButtonPressed(const FInputActionValue& Value)
+{
+	if (bIsCrouched)
+	{
+		UnCrouch();
+	}
+	else
+	{
+		Crouch();
+	}
+}
+
+void AProtocoloPersonagem::AimButtonPressed()
+{
+	if (Combat)
+	{
+		Combat->SetAiming(true);
+	}
+}
+
+void AProtocoloPersonagem::AimButtonReleased()
+{
+	if (Combat)
+	{
+		Combat->SetAiming(false);
+	}
+}
+
+bool AProtocoloPersonagem::IsAiming()
+{
+	return (Combat && Combat->bAiming);
+}
+
+void AProtocoloPersonagem::ServerEquipButtonPressed_Implementation()
+{
+	if (Combat)
+	{
+		Combat->EquipWeapon(OverlappingWeapon);
+	}
+}
+
 void AProtocoloPersonagem::SetOverlappingWeapon(AWeapon* Weapon)
 {
 	if (OverlappingWeapon)
@@ -194,4 +287,3 @@ void AProtocoloPersonagem::OnRep_OverlappingWeapon(AWeapon* LastWeapon)
 		LastWeapon->ShowPickupWidget(false);
 	}
 }
-

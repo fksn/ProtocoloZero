@@ -21,6 +21,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void PostInitializeComponents() override;
 
 protected:
 	// Called when the game starts or when spawned
@@ -31,6 +32,10 @@ protected:
 
 	// NOVA FUNÇÃO: Alternar a câmera
 	void ToggleCamera(const FInputActionValue& Value);
+	void EquipButtonPressed(const FInputActionValue& Value);
+	void CrouchButtonPressed(const FInputActionValue& Value);
+	void AimButtonPressed();
+	void AimButtonReleased();
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = Camera)
@@ -60,6 +65,15 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* ToggleCameraAction;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputAction* EquipAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputAction* CrouchAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* AimAction;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class UWidgetComponent* OverheadWidget;
 
@@ -69,9 +83,19 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_OverlappingWeapon)
 	class AWeapon* OverlappingWeapon;
 
+	UPROPERTY(VisibleAnywhere)
+	class UCombatComponent* Combat;
+
+	UFUNCTION(Server, Reliable)
+	void ServerEquipButtonPressed();
+
 	UFUNCTION()
 	void OnRep_OverlappingWeapon(AWeapon* LastWeapon);
 
+
 public:
 	void SetOverlappingWeapon(AWeapon* Weapon);
+	bool IsWeaponEquipped();
+	bool IsAiming();
 };
+
