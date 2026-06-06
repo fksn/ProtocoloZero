@@ -8,6 +8,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Components/CapsuleComponent.h"
 
 // --- ADICIONE ESTA LINHA AQUI ---
 #include "Components/CapsuleComponent.h"
@@ -34,6 +35,7 @@ AProtocoloPersonagem::AProtocoloPersonagem()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 	GetCharacterMovement()->bOrientRotationToMovement = false; // Desliga o modo de rotação livre do TPS
+	bUseControllerRotationYaw = true;
 	// ------------------------------------------------------------
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("CombatComponent"));
@@ -52,12 +54,13 @@ AProtocoloPersonagem::AProtocoloPersonagem()
 	HeadMesh->SetupAttachment(GetMesh());
 	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	HeadMesh->SetOwnerNoSee(true);
+	HeadMesh->bCastHiddenShadow = true;
 
 	// --- TRONCO ---
 	TorsoMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("TorsoMesh"));
 	TorsoMesh->SetupAttachment(GetMesh());
 	TorsoMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	TorsoMesh->SetOwnerNoSee(true);
+	TorsoMesh->SetOwnerNoSee(false);
 
 	// --- BRAÇOS (Você os vê na tela) ---
 	ArmsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("ArmsMesh"));
@@ -75,6 +78,9 @@ AProtocoloPersonagem::AProtocoloPersonagem()
 	FootsMesh->SetupAttachment(GetMesh());
 	FootsMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	FootsMesh->SetOwnerNoSee(false);
+
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECollisionChannel::ECC_Camera, ECollisionResponse::ECR_Ignore);
+	GetMesh()->SetCollisionResponseToChannel(ECollisionChannel::ECC_Camera, ECollisionResponse::ECR_Ignore);
 }
 
 void AProtocoloPersonagem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -87,12 +93,25 @@ void AProtocoloPersonagem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 void AProtocoloPersonagem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (GEngine && Combat)
+	{
+		// Cria o texto baseado no status da mira
+		FString StatusTexto = IsAiming() ? TEXT("Mirando: SIM") : TEXT("Mirando: NAO");
+
+		// Escolhe a cor (Verde para mirando, Vermelho para nao mirando)
+		FColor CorTexto = IsAiming() ? FColor::Green : FColor::Red;
+
+		// Imprime na tela. O "1" no primeiro parâmetro é a Key que impede a tela de encher de mensagens repetidas.
+		// O 0.0f é o tempo de tela (como atualiza todo frame, 0 é suficiente).
+		GEngine->AddOnScreenDebugMessage(1, 0.0f, CorTexto, StatusTexto);
+	}
 }
 
 // Called when the game starts or when spawned
 void AProtocoloPersonagem::BeginPlay()
 {
 	Super::BeginPlay();
+
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
@@ -149,6 +168,18 @@ void AProtocoloPersonagem::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 
 			// IE_Released vira ETriggerEvent::Completed
 			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &AProtocoloPersonagem::AimButtonReleased);
+		}
+
+		if (HeadMesh)
+		{
+			HeadMesh->SetHiddenInGame(true);
+			HeadMesh->bCastHiddenShadow = true; // Mantém a sua sombra projetada no chão
+		}
+
+		if (TorsoMesh)
+		{
+			TorsoMesh->SetHiddenInGame(true);
+			TorsoMesh->bCastHiddenShadow = true;
 		}
 	}
 }
@@ -222,10 +253,28 @@ void AProtocoloPersonagem::CrouchButtonPressed(const FInputActionValue& Value)
 	if (bIsCrouched)
 	{
 		UnCrouch();
+
+		// 1. Imprime na tela do jogo (Cor Azul Claro, duração de 3 segundos)
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, TEXT("Ação: UnCrouch() chamado!"));
+		}
+
+		// 2. Imprime no Console / Output Log (Aparece em amarelo)
+		UE_LOG(LogTemp, Warning, TEXT("Ação: UnCrouch() chamado!"));
 	}
 	else
 	{
 		Crouch();
+
+		// 1. Imprime na tela do jogo
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, TEXT("Ação: Crouch() chamado!"));
+		}
+
+		// 2. Imprime no Console / Output Log
+		UE_LOG(LogTemp, Warning, TEXT("Ação: Crouch() chamado!"));
 	}
 }
 
