@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
+#include "ProtocoloZero/ProtocoloTypes/TurningInPlace.h"
 #include "ProtocoloPersonagem.generated.h"
 
 class UInputMappingContext;
@@ -35,6 +36,7 @@ protected:
 	void CrouchButtonPressed(const FInputActionValue& Value);
 	void AimButtonPressed();
 	void AimButtonReleased();
+	void AimOffset(float DeltaTime);
 
 private:
 	// NOVA CÂMERA: Primeira Pessoa
@@ -96,10 +98,20 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modular Mesh", meta = (AllowPrivateAccess = "true"))
 	class USkeletalMeshComponent* FootsMesh;
 
+	float AO_Yaw;
+	float AO_Pitch;
+	FRotator StartingAimRotation;
+
+	ETurningInPlace TurningInPlace;
+	void TurnInPlace(float DeltaTime);
 
 public:
 	void SetOverlappingWeapon(AWeapon* Weapon);
 	bool IsWeaponEquipped();
 	bool IsAiming();
+	FORCEINLINE float GetAO_Yaw() const { return AO_Yaw; }
+	FORCEINLINE float GetAO_Pitch() const { return AO_Pitch; }
+	AWeapon* GetEquippedWeapon();
+	FORCEINLINE ETurningInPlace GetTurningInPlace() const { return TurningInPlace; }
 };
 
