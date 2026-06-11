@@ -10,6 +10,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Engine/Engine.h"
 #include "Components/CapsuleComponent.h"
 
 
@@ -22,66 +23,32 @@ AProtocoloPersonagem::AProtocoloPersonagem()
 	PrimaryActorTick.bCanEverTick = true;
 
 	// --- CÂMERA EM PRIMEIRA PESSOA (FPS) ---
-	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-	FirstPersonCamera->SetupAttachment(GetCapsuleComponent()); // Presa na cápsula de colisão (mira perfeita)
-	FirstPersonCamera->SetRelativeLocation(FVector(0.f, 0.f, 70.f)); // Altura dos olhos
-	FirstPersonCamera->bUsePawnControlRotation = true;
-	FirstPersonCamera->SetActive(true); // O jogo agora já nasce na visão FPS
-	// -------------------------------------------------
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(GetMesh());
+	CameraBoom->TargetArmLength = 600.f;
+	CameraBoom->bUsePawnControlRotation = true;
 
-	// --- ROTAÇÃO DO PERSONAGEM (Essencial para o Multiplayer) ---
-	bUseControllerRotationYaw = true; // Obriga o corpo invisível a girar com o mouse
-	bUseControllerRotationPitch = false;
-	bUseControllerRotationRoll = false;
-	GetCharacterMovement()->bOrientRotationToMovement = false; // Desliga o modo de rotação livre do TPS
-	bUseControllerRotationYaw = true;
-	// ------------------------------------------------------------
+	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	FollowCamera->bUsePawnControlRotation = false;
+	bUseControllerRotationYaw = false;
+
+	GetCharacterMovement()->bOrientRotationToMovement = true;
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("CombatComponent"));
 	Combat->SetIsReplicated(true);
 	GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
 
-	// 1. Oculta o corpo mestre da sua própria tela
-	GetMesh()->SetOwnerNoSee(true);
+	GetMesh()->SetOwnerNoSee(false);
 
-	// Obriga a Unreal a calcular a animação do esqueleto invisível
-	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-	GetMesh()->bEnableUpdateRateOptimizations = false;
-
-	// --- CABEÇA ---
-	HeadMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HeadMesh"));
-	HeadMesh->SetupAttachment(GetMesh());
-	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	HeadMesh->SetOwnerNoSee(true);
-	HeadMesh->bCastHiddenShadow = true;
-
-	// --- TRONCO ---
-	TorsoMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("TorsoMesh"));
-	TorsoMesh->SetupAttachment(GetMesh());
-	TorsoMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	TorsoMesh->SetOwnerNoSee(false);
-
-	// --- BRAÇOS (Você os vê na tela) ---
-	ArmsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("ArmsMesh"));
-	ArmsMesh->SetupAttachment(GetMesh());
-	ArmsMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	ArmsMesh->SetOwnerNoSee(false);
-
-	// --- PERNAS e PÉS (Você os vê ao olhar para baixo) ---
-	LegsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("LegsMesh"));
-	LegsMesh->SetupAttachment(GetMesh());
-	LegsMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	LegsMesh->SetOwnerNoSee(false);
-
-	FootsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FootsMesh"));
-	FootsMesh->SetupAttachment(GetMesh());
-	FootsMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	FootsMesh->SetOwnerNoSee(false);
-
+	GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECollisionChannel::ECC_Camera, ECollisionResponse::ECR_Ignore);
 	GetMesh()->SetCollisionResponseToChannel(ECollisionChannel::ECC_Camera, ECollisionResponse::ECR_Ignore);
-
+	GetCharacterMovement()->RotationRate = FRotator(0.f, 0.f, 900.f);
 	TurningInPlace = ETurningInPlace::ETIP_NotTurning;
+
+	NetUpdateFrequency = 66.f;
+	MinNetUpdateFrequency = 33.f;
 }
 
 void AProtocoloPersonagem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -127,6 +94,18 @@ void AProtocoloPersonagem::BeginPlay()
 	}
 }
 
+void AProtocoloPersonagem::Jump()
+{
+	if (bIsCrouched)
+	{
+		UnCrouch();
+	}
+	else
+	{
+		Super::Jump();
+	}
+}
+
 void AProtocoloPersonagem::AimOffset(float DeltaTime)
 {
 	if (Combat && Combat->EquippedWeapon == nullptr) return;
@@ -140,7 +119,11 @@ void AProtocoloPersonagem::AimOffset(float DeltaTime)
 		FRotator CurrentAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
 		FRotator DeltaAimRotation = UKismetMathLibrary::NormalizedDeltaRotator(CurrentAimRotation, StartingAimRotation);
 		AO_Yaw = DeltaAimRotation.Yaw;
-		bUseControllerRotationYaw = false;
+		if (TurningInPlace == ETurningInPlace::ETIP_NotTurning)
+		{
+			InterpAO_Yaw = AO_Yaw;
+		}
+		bUseControllerRotationYaw = true;
 		TurnInPlace(DeltaTime);
 	}
 	if (Speed > 0.f || bIsInAir) // running, or jumping
@@ -163,13 +146,26 @@ void AProtocoloPersonagem::AimOffset(float DeltaTime)
 
 void AProtocoloPersonagem::TurnInPlace(float DeltaTime)
 {
-	if (AO_Yaw > 90.f)
+	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, *UEnum::GetValueAsString(TurningInPlace));
+	if (AO_Yaw > 45.f)
 	{
 		TurningInPlace = ETurningInPlace::ETIP_Right;
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, *UEnum::GetValueAsString(TurningInPlace));
 	}
-	else if (AO_Yaw < -90.f)
+	else if (AO_Yaw < -45.f)
 	{
 		TurningInPlace = ETurningInPlace::ETIP_Left;
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, *UEnum::GetValueAsString(TurningInPlace));
+	}
+	if (TurningInPlace != ETurningInPlace::ETIP_NotTurning)
+	{
+		InterpAO_Yaw = FMath::FInterpTo(InterpAO_Yaw, 0.f, DeltaTime, 4.f);
+		AO_Yaw = InterpAO_Yaw;
+		if (FMath::Abs(AO_Yaw) < 15.f)
+		{
+			TurningInPlace = ETurningInPlace::ETIP_NotTurning;
+			StartingAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
+		}
 	}
 }
 
@@ -184,7 +180,7 @@ void AProtocoloPersonagem::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 		// Jump (Ação do tipo bool - Verdadeiro/Falso)
 		if (JumpAction)
 		{
-			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &AProtocoloPersonagem::Jump);
 			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 		}
 
@@ -216,18 +212,6 @@ void AProtocoloPersonagem::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 
 			// IE_Released vira ETriggerEvent::Completed
 			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &AProtocoloPersonagem::AimButtonReleased);
-		}
-
-		if (HeadMesh)
-		{
-			HeadMesh->SetHiddenInGame(true);
-			HeadMesh->bCastHiddenShadow = true; // Mantém a sua sombra projetada no chão
-		}
-
-		if (TorsoMesh)
-		{
-			TorsoMesh->SetHiddenInGame(true);
-			TorsoMesh->bCastHiddenShadow = true;
 		}
 	}
 }

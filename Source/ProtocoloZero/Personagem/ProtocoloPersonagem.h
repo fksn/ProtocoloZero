@@ -37,8 +37,15 @@ protected:
 	void AimButtonPressed();
 	void AimButtonReleased();
 	void AimOffset(float DeltaTime);
+	virtual void Jump() override;
 
 private:
+	UPROPERTY(VisibleAnywhere, Category = Camera)
+	class USpringArmComponent* CameraBoom;
+
+	UPROPERTY(VisibleAnywhere, Category = Camera)
+	class UCameraComponent* FollowCamera;
+
 	// NOVA CÂMERA: Primeira Pessoa
 	UPROPERTY(VisibleAnywhere, Category = Camera)
 	class UCameraComponent* FirstPersonCamera;
@@ -99,6 +106,7 @@ private:
 	class USkeletalMeshComponent* FootsMesh;
 
 	float AO_Yaw;
+	float InterpAO_Yaw;
 	float AO_Pitch;
 	FRotator StartingAimRotation;
 
